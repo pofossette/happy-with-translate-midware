@@ -1,4 +1,5 @@
 import * as z from 'zod';
+import { MessageTranslationMetaSchema } from './translationTypes';
 
 export const MessageMetaSchema = z.object({
   sentFrom: z.string().optional(),
@@ -10,5 +11,6 @@ export const MessageMetaSchema = z.object({
   allowedTools: z.array(z.string()).nullable().optional(),
   disallowedTools: z.array(z.string()).nullable().optional(),
   displayText: z.string().optional(),
+  translation: MessageTranslationMetaSchema.optional(),
 });
 export type MessageMeta = z.infer<typeof MessageMetaSchema>;

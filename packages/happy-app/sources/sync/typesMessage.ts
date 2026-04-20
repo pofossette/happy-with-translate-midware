@@ -1,5 +1,5 @@
 import { AgentEvent } from "./typesRaw";
-import { MessageMeta } from "./typesMessageMeta";
+import { MessageMeta, MessageTranslationMeta } from "./typesMessageMeta";
 
 export type ToolCall = {
     name: string;
@@ -48,6 +48,8 @@ export type AgentTextMessage = {
     text: string;
     isThinking?: boolean;
     meta?: MessageMeta;
+    /** Translation metadata for displaying translated agent output */
+    translation?: MessageTranslationMeta;
 }
 
 export type ToolCallMessage = {

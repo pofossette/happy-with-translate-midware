@@ -2,6 +2,14 @@ import { EventEmitter } from 'node:events';
 import { io, Socket } from 'socket.io-client';
 import { decodeBase64, encodeBase64, encrypt, decrypt } from './encryption';
 import type { EncryptionVariant } from './api';
+import type { SessionTranslationConfig } from '@slopus/happy-wire';
+import {
+    OpenAITranslator,
+    InboundTranslationMiddleware,
+    OutboundTranslationMiddleware,
+    createInboundMiddleware,
+    createOutboundMiddleware,
+} from './translation/index.js';
 
 // --- Types ---
 
@@ -12,6 +20,10 @@ export type SessionClientOptions = {
     token: string;
     serverUrl: string;
     initialAgentState?: unknown | null;
+    /** Translation configuration (optional) */
+    translationConfig?: SessionTranslationConfig;
+    /** OpenAI API key for translation (optional) */
+    openaiApiKey?: string;
 };
 
 type SessionContentEnvelope = {
@@ -95,6 +107,8 @@ export class SessionClient extends EventEmitter {
     private metadataVersion = 0;
     private agentState: unknown | null = null;
     private agentStateVersion = 0;
+    private inboundMiddleware: InboundTranslationMiddleware | null = null;
+    private outboundMiddleware: OutboundTranslationMiddleware | null = null;
 
     constructor(opts: SessionClientOptions) {
         super();
@@ -103,6 +117,15 @@ export class SessionClient extends EventEmitter {
         this.encryptionVariant = opts.encryptionVariant;
         if (opts.initialAgentState !== undefined) {
             this.agentState = opts.initialAgentState;
+        }
+
+        // Initialize translation middleware if config provided
+        if (opts.translationConfig?.enabled) {
+            const translator = new OpenAITranslator({
+                apiKey: opts.openaiApiKey ?? process.env.OPENAI_API_KEY ?? '',
+            });
+            this.inboundMiddleware = createInboundMiddleware(opts.translationConfig, translator);
+            this.outboundMiddleware = createOutboundMiddleware(opts.translationConfig, translator);
         }
 
         // Prevent unhandled 'error' event from crashing the process
@@ -189,7 +212,29 @@ export class SessionClient extends EventEmitter {
         this.socket.connect();
     }
 
+    /**
+     * Send a message to the session.
+     * If translation is enabled, translates Chinese to English before sending.
+     */
     sendMessage(text: string, meta?: Record<string, unknown>): void {
+        // If no translation or outbound-only mode, send directly
+        if (!this.inboundMiddleware) {
+            this.sendMessageDirect(text, meta);
+            return;
+        }
+
+        // Use async translation and send
+        this.sendMessageWithTranslation(text, meta).catch((error) => {
+            // On translation error, fall back to direct send
+            console.warn('Translation failed, sending original text:', error);
+            this.sendMessageDirect(text, meta);
+        });
+    }
+
+    /**
+     * Send message directly without translation
+     */
+    private sendMessageDirect(text: string, meta?: Record<string, unknown>): void {
         const content = {
             role: 'user',
             content: {
@@ -206,6 +251,60 @@ export class SessionClient extends EventEmitter {
             sid: this.sessionId,
             message: encrypted,
         });
+    }
+
+    /**
+     * Send message with translation (async)
+     */
+    private async sendMessageWithTranslation(text: string, meta?: Record<string, unknown>): Promise<void> {
+        if (!this.inboundMiddleware) {
+            this.sendMessageDirect(text, meta);
+            return;
+        }
+
+        const userMessage = {
+            role: 'user' as const,
+            content: {
+                type: 'text' as const,
+                text,
+            },
+            meta: {
+                sentFrom: 'happy-agent',
+                ...meta,
+            },
+        };
+
+        const result = await this.inboundMiddleware.process(userMessage);
+
+        // Use the translated text, but preserve displayText with original
+        const content = result.message;
+        const encrypted = encodeBase64(encrypt(this.encryptionKey, this.encryptionVariant, content));
+        this.socket.emit('message', {
+            sid: this.sessionId,
+            message: encrypted,
+        });
+    }
+
+    /**
+     * Translate agent message (for outbound translation).
+     * Called by the agent when sending responses.
+     */
+    async translateAgentText(text: string): Promise<{ text: string; translation?: { sourceText: string; translatedText: string } }> {
+        if (!this.outboundMiddleware) {
+            return { text };
+        }
+
+        const result = await this.outboundMiddleware.process(text);
+        if (result.translated && result.translation) {
+            return {
+                text: result.sourceText, // Keep original English for provider
+                translation: {
+                    sourceText: result.sourceText,
+                    translatedText: result.translatedText,
+                },
+            };
+        }
+        return { text };
     }
 
     getMetadata(): unknown | null {

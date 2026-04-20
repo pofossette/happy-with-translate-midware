@@ -775,6 +775,8 @@ export const zhHant: TranslationStructure = {
         unknownEvent: '未知事件',
         usageLimitUntil: ({ time }: { time: string }) => `使用限制到 ${time}`,
         unknownTime: '未知時間',
+        showOriginal: '查看原文',
+        showTranslation: '查看翻譯',
     },
 
     codex: {

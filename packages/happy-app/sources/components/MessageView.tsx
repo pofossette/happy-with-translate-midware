@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Text } from "react-native";
+import { View, Text, TouchableOpacity } from "react-native";
 import { StyleSheet } from 'react-native-unistyles';
 import { MarkdownView } from "./markdown/MarkdownView";
 import { t } from '@/text';
@@ -77,9 +77,6 @@ function UserTextBlock(props: {
     <View style={styles.userMessageContainer}>
       <View style={styles.userMessageBubble}>
         <MarkdownView markdown={props.message.displayText || props.message.text} onOptionPress={handleOptionPress} sessionId={props.sessionId} />
-        {/* {__DEV__ && (
-          <Text style={styles.debugText}>{JSON.stringify(props.message.meta)}</Text>
-        )} */}
       </View>
     </View>
   );
@@ -93,14 +90,36 @@ function AgentTextBlock(props: {
     sync.sendMessage(props.sessionId, option.title, { source: 'option' });
   }, [props.sessionId]);
 
+  // State for showing original vs translated text
+  const [showOriginal, setShowOriginal] = React.useState(false);
+
   // Hide thinking messages
   if (props.message.isThinking) {
     return null;
   }
 
+  // Get translation data - check both message.translation and meta.translation
+  const translation = props.message.translation ?? props.message.meta?.translation;
+  const hasTranslation = translation && translation.status === 'success';
+
+  // Determine which text to display
+  const displayText = hasTranslation && !showOriginal
+    ? translation.translatedText
+    : props.message.text;
+
   return (
     <View style={styles.agentMessageContainer}>
-      <MarkdownView markdown={props.message.text} onOptionPress={handleOptionPress} sessionId={props.sessionId} />
+      <MarkdownView markdown={displayText} onOptionPress={handleOptionPress} sessionId={props.sessionId} />
+      {hasTranslation && (
+        <TouchableOpacity
+          style={styles.translationToggle}
+          onPress={() => setShowOriginal(!showOriginal)}
+        >
+          <Text style={styles.translationToggleText}>
+            {showOriginal ? t('message.showTranslation') : t('message.showOriginal')}
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -215,8 +234,13 @@ const styles = StyleSheet.create((theme) => ({
   toolContainer: {
     marginHorizontal: 8,
   },
-  debugText: {
-    color: theme.colors.agentEventText,
+  translationToggle: {
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  translationToggleText: {
+    color: theme.colors.textLink,
     fontSize: 12,
   },
 }));

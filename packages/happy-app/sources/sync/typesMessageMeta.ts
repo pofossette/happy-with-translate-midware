@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { MessageTranslationMetaSchema } from '@slopus/happy-wire';
+
+// Re-export the translation meta type
+export type MessageTranslationMeta = z.infer<typeof MessageTranslationMetaSchema>;
 
 // Shared message metadata schema
 export const MessageMetaSchema = z.object({
@@ -10,7 +14,8 @@ export const MessageMetaSchema = z.object({
     appendSystemPrompt: z.string().nullable().optional(), // Append to system prompt for this message (null = reset)
     allowedTools: z.array(z.string()).nullable().optional(), // Allowed tools for this message (null = reset)
     disallowedTools: z.array(z.string()).nullable().optional(), // Disallowed tools for this message (null = reset)
-    displayText: z.string().optional() // Optional text to display in UI instead of actual message text
+    displayText: z.string().optional(), // Optional text to display in UI instead of actual message text
+    translation: MessageTranslationMetaSchema.optional(), // Translation metadata for bidirectional translation
 });
 
 export type MessageMeta = z.infer<typeof MessageMetaSchema>;
